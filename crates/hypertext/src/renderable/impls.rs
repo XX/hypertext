@@ -10,7 +10,7 @@ use crate::{
         sync::Arc,
         vec::Vec,
     },
-    context::{AttributeValue, Context, Node},
+    context::{AttributeValue, Attributes, Context, Node, ValueContext},
 };
 
 impl<T: AsRef<str>, C: Context> Renderable<C> for Raw<T, C> {
@@ -152,7 +152,7 @@ where
     }
 }
 
-impl<C: Context> Renderable<C> for bool {
+impl<C: ValueContext> Renderable<C> for bool {
     #[inline]
     fn render_to(&self, buffer: &mut Buffer<C>) {
         // XSS SAFETY: "true" and "false" are safe strings
@@ -171,7 +171,7 @@ impl<C: Context> Renderable<C> for bool {
 macro_rules! render_via_itoa {
     ($($Ty:ty)*) => {
         $(
-            impl<C: Context> Renderable<C> for $Ty {
+            impl<C: ValueContext> Renderable<C> for $Ty {
                 #[inline]
                 fn render_to(&self, buffer: &mut Buffer<C>) {
                     // XSS SAFETY: integers are safe
@@ -196,7 +196,7 @@ render_via_itoa! {
 macro_rules! render_via_ryu {
     ($($Ty:ty)*) => {
         $(
-            impl<C: Context> Renderable<C> for $Ty {
+            impl<C: ValueContext> Renderable<C> for $Ty {
                 #[inline]
                 fn render_to(&self, buffer: &mut Buffer<C>) {
                     // XSS SAFETY: floats are safe
@@ -275,6 +275,32 @@ impl<T: Renderable, const N: usize> Renderable for [T; N] {
 impl<T: Renderable> Renderable for Vec<T> {
     #[inline]
     fn render_to(&self, buffer: &mut Buffer) {
+        self.as_slice().render_to(buffer);
+    }
+}
+
+// Sequences concatenate their items, which makes sense for nodes and for
+// attribute lists, but not for a single attribute value.
+
+impl<T: Renderable<Attributes>> Renderable<Attributes> for [T] {
+    #[inline]
+    fn render_to(&self, buffer: &mut Buffer<Attributes>) {
+        for item in self {
+            item.render_to(buffer);
+        }
+    }
+}
+
+impl<T: Renderable<Attributes>, const N: usize> Renderable<Attributes> for [T; N] {
+    #[inline]
+    fn render_to(&self, buffer: &mut Buffer<Attributes>) {
+        self.as_slice().render_to(buffer);
+    }
+}
+
+impl<T: Renderable<Attributes>> Renderable<Attributes> for Vec<T> {
+    #[inline]
+    fn render_to(&self, buffer: &mut Buffer<Attributes>) {
         self.as_slice().render_to(buffer);
     }
 }

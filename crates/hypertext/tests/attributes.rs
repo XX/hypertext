@@ -1,7 +1,10 @@
 //! Attribute rendering tests.
 #![cfg(feature = "alloc")]
 
-use hypertext::prelude::*;
+use hypertext::{
+    AttributesBuffer, Buffer, Builder, Lazy, NamedAttribute, RawAttributes, context::Attributes,
+    prelude::*,
+};
 
 #[test]
 fn static_string_attribute() {
@@ -559,4 +562,262 @@ fn hyperscript_attributes() {
             r#"<button _="on click increment :x then put result into the next &lt;output/&gt;">Click Me</button><output>--</output>"#,
         );
     }
+}
+
+#[test]
+fn spread_named_attributes() {
+    let attrs = [
+        NamedAttribute::new("data-id", "42"),
+        NamedAttribute::new("data-label", "Answer"),
+    ];
+
+    let results = [
+        maud! { div (attrs) { "content" } }.render(),
+        rsx! { <div (attrs)>content</div> }.render(),
+    ];
+
+    for result in results {
+        assert_eq!(
+            result.as_inner(),
+            r#"<div data-id="42" data-label="Answer">content</div>"#
+        );
+    }
+}
+
+#[test]
+fn spread_heterogeneous_attributes_via_tuple() {
+    let attrs = (
+        NamedAttribute::new("data-id", 42),
+        NamedAttribute::new("data-ratio", 1.5),
+        NamedAttribute::new("data-label", "Answer"),
+    );
+
+    let results = [
+        maud! { div (attrs) {} }.render(),
+        rsx! { <div (attrs)></div> }.render(),
+    ];
+
+    for result in results {
+        assert_eq!(
+            result.as_inner(),
+            r#"<div data-id="42" data-ratio="1.5" data-label="Answer"></div>"#
+        );
+    }
+}
+
+#[test]
+fn spread_attribute_values_are_escaped() {
+    let attrs = [NamedAttribute::new("data-label", r#"a & "b" <c>"#)];
+
+    let results = [
+        maud! { div (attrs) {} }.render(),
+        rsx! { <div (attrs)></div> }.render(),
+    ];
+
+    for result in results {
+        assert_eq!(
+            result.as_inner(),
+            r#"<div data-label="a &amp; &quot;b&quot; &lt;c&gt;"></div>"#
+        );
+    }
+}
+
+#[test]
+fn spread_empty_attribute() {
+    let attrs = [NamedAttribute::<_, ()>::empty("disabled")];
+
+    let results = [
+        maud! { input type="checkbox" (attrs); }.render(),
+        rsx! { <input type="checkbox" (attrs) /> }.render(),
+    ];
+
+    for result in results {
+        assert_eq!(result.as_inner(), r#"<input type="checkbox" disabled>"#);
+    }
+}
+
+#[test]
+fn spread_position_is_respected() {
+    let attrs = [NamedAttribute::new("data-x", "1")];
+
+    let results = [
+        maud! { div (attrs) title="after" {} }.render(),
+        rsx! { <div (attrs) title="after"></div> }.render(),
+    ];
+
+    for result in results {
+        assert_eq!(result.as_inner(), r#"<div data-x="1" title="after"></div>"#);
+    }
+
+    let results = [
+        maud! { div title="before" (attrs) {} }.render(),
+        rsx! { <div title="before" (attrs)></div> }.render(),
+    ];
+
+    for result in results {
+        assert_eq!(
+            result.as_inner(),
+            r#"<div title="before" data-x="1"></div>"#
+        );
+    }
+}
+
+#[test]
+fn multiple_spreads_and_shorthands() {
+    let first = [NamedAttribute::new("data-x", "1")];
+    let second = [NamedAttribute::new("data-y", "2")];
+
+    let results = [
+        maud! { div #card .active (first) title="t" (second) {} }.render(),
+        rsx! { <div id="card" class="active" (first) title="t" (second)></div> }.render(),
+    ];
+
+    for result in results {
+        assert_eq!(
+            result.as_inner(),
+            r#"<div id="card" class="active" data-x="1" title="t" data-y="2"></div>"#
+        );
+    }
+}
+
+#[test]
+fn spread_optional_attributes() {
+    let some = Some([NamedAttribute::new("data-x", "1")]);
+    let none: Option<[NamedAttribute<&str, ()>; 1]> = None;
+
+    let results = [
+        maud! { div (some) (none) {} }.render(),
+        rsx! { <div (some) (none)></div> }.render(),
+    ];
+
+    for result in results {
+        assert_eq!(result.as_inner(), r#"<div data-x="1"></div>"#);
+    }
+}
+
+#[test]
+fn spread_custom_renderable() {
+    struct DataAttrs<'a>(&'a [(&'a str, &'a str)]);
+
+    impl Renderable<Attributes> for DataAttrs<'_> {
+        fn render_to(&self, buffer: &mut AttributesBuffer) {
+            for (name, value) in self.0 {
+                buffer.push_attribute(name, value);
+            }
+        }
+    }
+
+    let attrs = DataAttrs(&[("data-a", "1"), ("data-b", "2")]);
+    let attrs = &attrs;
+
+    let results = [
+        maud! { div (attrs) {} }.render(),
+        rsx! { <div (attrs)></div> }.render(),
+    ];
+
+    for result in results {
+        assert_eq!(result.as_inner(), r#"<div data-a="1" data-b="2"></div>"#);
+    }
+}
+
+#[test]
+fn spread_lazy_and_raw_attributes() {
+    // XSS SAFETY: `push_attribute` validates the name and escapes the value.
+    let lazy = Lazy::dangerously_create(|buffer: &mut AttributesBuffer| {
+        buffer.push_attribute("data-lazy", true);
+    });
+
+    // XSS SAFETY: a static, well-formed attribute list.
+    let raw = RawAttributes::dangerously_create(r#" data-raw="1""#);
+
+    let results = [
+        maud! { div (lazy) (raw) {} }.render(),
+        rsx! { <div (lazy) (raw)></div> }.render(),
+    ];
+
+    for result in results {
+        assert_eq!(
+            result.as_inner(),
+            r#"<div data-lazy="true" data-raw="1"></div>"#
+        );
+    }
+}
+
+#[test]
+fn spread_into_svg_element() {
+    let attrs = [NamedAttribute::new("data-x", "1")];
+
+    let results = [
+        svg::maud! { circle r="5" (attrs); }.render(),
+        svg::rsx! { <circle r="5" (attrs) /> }.render(),
+    ];
+
+    for result in results {
+        assert_eq!(result.as_inner(), r#"<circle r="5" data-x="1"/>"#);
+    }
+}
+
+#[test]
+fn spread_in_components() {
+    #[derive(Builder)]
+    struct Card<'a, A: Renderable<Attributes>> {
+        attrs: A,
+        children: Lazy<fn(&mut Buffer)>,
+        #[builder(default = "card")]
+        class: &'a str,
+    }
+
+    impl<A: Renderable<Attributes>> Renderable for Card<'_, A> {
+        fn render_to(&self, buffer: &mut Buffer) {
+            buffer.push(maud! {
+                div class=(self.class) (self.attrs) {
+                    (self.children)
+                }
+            });
+        }
+    }
+
+    let attrs = vec![NamedAttribute::new("data-id", "42")];
+    let attrs = &attrs;
+
+    let results = [
+        maud! { Card attrs=(attrs) { "content" } }.render(),
+        rsx! { <Card attrs=(attrs)>content</Card> }.render(),
+    ];
+
+    for result in results {
+        assert_eq!(
+            result.as_inner(),
+            r#"<div class="card" data-id="42">content</div>"#
+        );
+    }
+}
+
+#[test]
+fn attribute_name_validation() {
+    assert!(AttributesBuffer::is_valid_attribute_name("data-id"));
+    assert!(AttributesBuffer::is_valid_attribute_name("@click"));
+    assert!(AttributesBuffer::is_valid_attribute_name(":class"));
+    assert!(AttributesBuffer::is_valid_attribute_name("x-on:click.away"));
+    assert!(AttributesBuffer::is_valid_attribute_name("ключ"));
+
+    assert!(!AttributesBuffer::is_valid_attribute_name(""));
+    assert!(!AttributesBuffer::is_valid_attribute_name("data id"));
+    assert!(!AttributesBuffer::is_valid_attribute_name("data\nid"));
+    assert!(!AttributesBuffer::is_valid_attribute_name("data=id"));
+    assert!(!AttributesBuffer::is_valid_attribute_name("data/id"));
+    assert!(!AttributesBuffer::is_valid_attribute_name("data>id"));
+    assert!(!AttributesBuffer::is_valid_attribute_name("data<id"));
+    assert!(!AttributesBuffer::is_valid_attribute_name("data'id"));
+    assert!(!AttributesBuffer::is_valid_attribute_name(
+        r#"x" onclick="alert(1)"#
+    ));
+}
+
+#[test]
+#[should_panic(expected = "invalid attribute name")]
+fn spread_rejects_breaking_out_of_the_tag() {
+    let attrs = [NamedAttribute::new(r#"x" onclick="alert(1)"#, "1")];
+
+    _ = maud! { div (attrs) {} }.render();
 }

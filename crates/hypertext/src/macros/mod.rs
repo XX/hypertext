@@ -190,6 +190,41 @@ pub use hypertext_macros::html;
 /// );
 /// ```
 ///
+/// # Spreading Attributes
+///
+/// A parenthesized expression in attribute position spreads a list of
+/// attributes into the element, which is how attributes whose names are only
+/// known at runtime can be rendered. The expression must implement
+/// [`Renderable<Attributes>`](crate::Renderable), which is implemented for
+/// [`NamedAttribute`](crate::NamedAttribute), as well as for slices, arrays,
+/// [`Vec`](alloc::vec::Vec)s, [`Option`]s and tuples of it:
+///
+/// ```
+/// use hypertext::{NamedAttribute, prelude::*};
+///
+/// let attrs = [
+///     NamedAttribute::new("data-id", "42"),
+///     NamedAttribute::new("data-label", "Answer"),
+/// ];
+///
+/// assert_eq!(
+///     maud! { div.card (attrs) title="Card" { "content" } }
+///         .render()
+///         .as_inner(),
+///     r#"<div class="card" data-id="42" data-label="Answer" title="Card">content</div>"#,
+/// );
+/// ```
+///
+/// Attributes are rendered in the order they are written, so a spread does not
+/// override the attributes written before it: duplicate attributes are rendered
+/// as-is, and browsers use the first occurrence.
+///
+/// Unlike attributes written out in the macro, spread attribute names cannot be
+/// checked against the element at compile time, and are instead validated while
+/// rendering. See [`AttributesBuffer`](crate::AttributesBuffer) for the exact
+/// rules, and for how to implement
+/// [`Renderable<Attributes>`](crate::Renderable) for your own types.
+///
 /// For more details on the rest of Maud's syntax, see the [Maud Book](https://maud.lambda.xyz).
 ///
 /// # Example
@@ -281,6 +316,41 @@ pub use hypertext_macros::maud;
 ///     r#"<div title="Hello">content</div>"#
 /// );
 /// ```
+///
+/// # Spreading Attributes
+///
+/// A parenthesized expression in attribute position spreads a list of
+/// attributes into the element, which is how attributes whose names are only
+/// known at runtime can be rendered. The expression must implement
+/// [`Renderable<Attributes>`](crate::Renderable), which is implemented for
+/// [`NamedAttribute`](crate::NamedAttribute), as well as for slices, arrays,
+/// [`Vec`](alloc::vec::Vec)s, [`Option`]s and tuples of it:
+///
+/// ```
+/// use hypertext::{NamedAttribute, prelude::*};
+///
+/// let attrs = [
+///     NamedAttribute::new("data-id", "42"),
+///     NamedAttribute::new("data-label", "Answer"),
+/// ];
+///
+/// assert_eq!(
+///     rsx! { <div class="card" (attrs) title="Card">"content"</div> }
+///         .render()
+///         .as_inner(),
+///     r#"<div class="card" data-id="42" data-label="Answer" title="Card">content</div>"#,
+/// );
+/// ```
+///
+/// Attributes are rendered in the order they are written, so a spread does not
+/// override the attributes written before it: duplicate attributes are rendered
+/// as-is, and browsers use the first occurrence.
+///
+/// Unlike attributes written out in the macro, spread attribute names cannot be
+/// checked against the element at compile time, and are instead validated while
+/// rendering. See [`AttributesBuffer`](crate::AttributesBuffer) for the exact
+/// rules, and for how to implement
+/// [`Renderable<Attributes>`](crate::Renderable) for your own types.
 ///
 /// # Examples
 ///
