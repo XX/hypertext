@@ -87,6 +87,38 @@ impl Context for Infallible {
         Cow::Borrowed(s)
     }
 }
+
+/// The context of a spread attribute list.
+///
+/// This context has no syntax of its own: a list of attributes can only ever
+/// come from an expression, so this type is uninhabited and only used as a
+/// marker for [`Generate`] and [`Generator::push_expr`].
+pub enum Attributes {}
+
+impl Context for Attributes {
+    fn is_control(&self) -> bool {
+        #[expect(clippy::uninhabited_references)]
+        match *self {}
+    }
+
+    fn marker_type() -> TokenStream {
+        quote!(::hypertext::context::Attributes)
+    }
+
+    fn escape(s: &str) -> Cow<'_, str> {
+        Cow::Borrowed(s)
+    }
+}
+
+impl Generate for Attributes {
+    type Context = Self;
+
+    fn generate(&self, _: &mut Generator) {
+        #[expect(clippy::uninhabited_references)]
+        match *self {}
+    }
+}
+
 pub enum Node<S: Syntax> {
     Doctype(Doctype<S>),
     XmlDecl(XmlDecl<S>),
@@ -374,7 +406,7 @@ impl<C: Context> Generate for Many<C> {
 
 pub struct Element<S: Syntax> {
     name: UnquotedName,
-    attrs: Vec<Attribute>,
+    attrs: Vec<ElementAttribute>,
     body: ElementBody<S>,
 }
 
@@ -391,7 +423,7 @@ impl<S: Syntax> Generate for Element<S> {
 
         for attr in &self.attrs {
             g.push(attr);
-            if let Some(check) = attr.name.check() {
+            if let Some(check) = attr.check() {
                 el_checks.push_attribute(check);
             }
         }
@@ -460,6 +492,57 @@ pub enum ElementBody<S: Syntax> {
 impl<S: Syntax> ElementBody<S> {
     const fn element_kind(&self, flavour: NodeFlavour) -> ElementKind {
         flavour.element_kind(matches!(self, Self::Void { .. }))
+    }
+}
+
+/// An item in an element's attribute collection: either a single attribute
+/// written out in the macro, or an expression spreading a list of attributes
+/// into the element.
+pub enum ElementAttribute {
+    Single(Attribute),
+
+    /// A `(expr)` in attribute position, rendering `expr` as a list of
+    /// attributes.
+    List(ParenExpr<Attributes>),
+}
+
+impl ElementAttribute {
+    fn parse_id(input: ParseStream) -> syn::Result<Self> {
+        input.call(Attribute::parse_id).map(Self::Single)
+    }
+
+    fn parse_class_list(input: ParseStream) -> syn::Result<Self> {
+        input.call(Attribute::parse_class_list).map(Self::Single)
+    }
+
+    /// The check to run against the element's type, if the attribute name is
+    /// known at compile time.
+    fn check(&self) -> Option<AttributeCheck> {
+        match self {
+            Self::Single(attr) => attr.name.check(),
+            Self::List(_) => None,
+        }
+    }
+}
+
+impl Parse for ElementAttribute {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        if input.peek(Paren) {
+            input.parse().map(Self::List)
+        } else {
+            input.parse().map(Self::Single)
+        }
+    }
+}
+
+impl Generate for ElementAttribute {
+    type Context = AttributeValue;
+
+    fn generate(&self, g: &mut Generator) {
+        match self {
+            Self::Single(attr) => g.push(attr),
+            Self::List(attrs) => g.push(attrs),
+        }
     }
 }
 

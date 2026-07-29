@@ -11,7 +11,7 @@ use crate::{
     Raw, Rendered,
     alloc::string::String,
     const_precise_live_drops_hack,
-    context::{AttributeValue, Context, Node},
+    context::{AttributeValue, Attributes, Context, Node},
 };
 
 /// A type that can be rendered as an HTML node.
@@ -25,6 +25,32 @@ use crate::{
 /// implementation must escape `&` to `&amp;`, `<` to `&lt;`, `>` to `&gt;`, and
 /// `"` to `&quot;`.
 ///
+/// For [`Renderable<Attributes>`] implementations, this must render zero or
+/// more attributes as written inside an element's opening tag, each preceded by
+/// a space. Such values are rendered by the `(...)` spread syntax in attribute
+/// position, and should be built using [`AttributesBuffer::push_attribute`]
+/// and [`AttributesBuffer::push_empty_attribute`]:
+///
+/// ```
+/// use hypertext::{AttributesBuffer, context::Attributes, prelude::*};
+///
+/// pub struct DataAttrs(Vec<(String, String)>);
+///
+/// impl Renderable<Attributes> for DataAttrs {
+///     fn render_to(&self, buffer: &mut AttributesBuffer) {
+///         for (name, value) in &self.0 {
+///             buffer.push_attribute(name, value);
+///         }
+///     }
+/// }
+///
+/// let attrs = DataAttrs(vec![("data-id".into(), "42".into())]);
+///
+/// assert_eq!(
+///     maud! { div (attrs) { "content" } }.render().as_inner(),
+///     r#"<div data-id="42">content</div>"#,
+/// );
+/// ```
 ///
 /// # Examples
 ///
@@ -262,6 +288,10 @@ impl<T: Renderable> RenderableExt for T {}
 /// render an attribute value which will eventually be surrounded by double
 /// quotes. The closure must escape `&` to `&amp;`, `<` to `&lt;`, `>` to
 /// `&gt;`, and `"` to `&quot;`.
+///
+/// For [`Lazy<F, Attributes>`] (a.k.a. [`LazyAttributes<F>`]), this must render
+/// zero or more attributes as written inside an element's opening tag, each
+/// preceded by a space.
 #[derive(Clone, Copy)]
 #[must_use = "`Lazy` does nothing unless `.render()` or `.render_to()` is called"]
 pub struct Lazy<F: Fn(&mut Buffer<C>), C: Context = Node> {
@@ -273,6 +303,11 @@ pub struct Lazy<F: Fn(&mut Buffer<C>), C: Context = Node> {
 ///
 /// This is a type alias for [`Lazy<F, AttributeValue>`].
 pub type LazyAttribute<F> = Lazy<F, AttributeValue>;
+
+/// A list of attributes lazily rendered via a closure.
+///
+/// This is a type alias for [`Lazy<F, Attributes>`].
+pub type LazyAttributes<F> = Lazy<F, Attributes>;
 
 impl<F: Fn(&mut Buffer<C>), C: Context> Lazy<F, C> {
     /// Creates a new [`Lazy`] from the given closure.
@@ -320,6 +355,95 @@ impl<F: Fn(&mut Buffer<C>), C: Context> Debug for Lazy<F, C> {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_tuple("Lazy").finish_non_exhaustive()
+    }
+}
+
+/// A single attribute whose name is only known at runtime.
+///
+/// This is the building block for spreading a collection of attributes into an
+/// element via the `(...)` syntax of [`maud!`](crate::maud!) and
+/// [`rsx!`](crate::rsx!), as [`Renderable<Attributes>`] is implemented for
+/// slices, arrays and [`Vec`](crate::alloc::vec::Vec)s of it, as well as for
+/// [`Option`] and tuples.
+///
+/// Unlike attributes written directly in the macros, the name is not checked
+/// against the element it is rendered into, and so it must be a valid attribute
+/// name as reported by [`AttributesBuffer::is_valid_attribute_name`].
+///
+/// # Example
+///
+/// ```
+/// use hypertext::{NamedAttribute, prelude::*};
+///
+/// let attrs = vec![
+///     NamedAttribute::new("data-id", "42"),
+///     NamedAttribute::new("data-label", "Answer"),
+/// ];
+///
+/// assert_eq!(
+///     maud! { div.card (attrs) { "content" } }.render().as_inner(),
+///     r#"<div class="card" data-id="42" data-label="Answer">content</div>"#,
+/// );
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct NamedAttribute<N: AsRef<str>, V: Renderable<AttributeValue>> {
+    name: N,
+    value: Option<V>,
+}
+
+impl<N: AsRef<str>, V: Renderable<AttributeValue>> NamedAttribute<N, V> {
+    /// Creates an attribute with the given name and value.
+    #[inline]
+    pub const fn new(name: N, value: V) -> Self {
+        Self {
+            name,
+            value: Some(value),
+        }
+    }
+
+    /// Gets the name of the attribute.
+    #[inline]
+    pub fn name(&self) -> &str {
+        self.name.as_ref()
+    }
+
+    /// Gets the value of the attribute, if it has one.
+    #[inline]
+    pub const fn value(&self) -> Option<&V> {
+        self.value.as_ref()
+    }
+
+    /// Creates a valueless (boolean) attribute with the given name, rendered
+    /// without a `="..."` part.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use hypertext::{NamedAttribute, prelude::*};
+    ///
+    /// let attrs = [NamedAttribute::<_, ()>::empty("disabled")];
+    ///
+    /// assert_eq!(
+    ///     rsx! { <input type="checkbox" (attrs) /> }
+    ///         .render()
+    ///         .as_inner(),
+    ///     r#"<input type="checkbox" disabled>"#,
+    /// );
+    /// ```
+    #[inline]
+    pub const fn empty(name: N) -> Self {
+        Self { name, value: None }
+    }
+}
+
+impl<N: AsRef<str>, V: Renderable<AttributeValue>> Renderable<Attributes> for NamedAttribute<N, V> {
+    #[inline]
+    fn render_to(&self, buffer: &mut AttributesBuffer) {
+        if let Some(value) = &self.value {
+            buffer.push_attribute(self.name.as_ref(), value);
+        } else {
+            buffer.push_empty_attribute(self.name.as_ref());
+        }
     }
 }
 

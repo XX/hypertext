@@ -9,7 +9,7 @@ use syn::{
 };
 
 use crate::html::{
-    Attribute, ChildrenMode, Component, Doctype, Element, ElementBody, Group, Node, Syntax,
+    ChildrenMode, Component, Doctype, Element, ElementAttribute, ElementBody, Group, Node, Syntax,
     UnquotedName, XmlDecl, kw,
 };
 
@@ -103,11 +103,11 @@ impl Parse for Element<Maud> {
                 let mut attrs = Vec::new();
 
                 if input.peek(Token![#]) {
-                    attrs.push(input.call(Attribute::parse_id)?);
+                    attrs.push(input.call(ElementAttribute::parse_id)?);
                 }
 
                 if input.peek(Token![.]) {
-                    attrs.push(input.call(Attribute::parse_class_list)?);
+                    attrs.push(input.call(ElementAttribute::parse_class_list)?);
                 }
 
                 while !(input.peek(Token![;]) || input.peek(Brace)) {

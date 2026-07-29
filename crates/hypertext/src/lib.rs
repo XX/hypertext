@@ -131,7 +131,7 @@ use core::{fmt::Debug, marker::PhantomData};
 
 pub use bon::{self, Builder};
 
-use self::context::{AttributeValue, Context, Node};
+use self::context::{AttributeValue, Attributes, Context, Node};
 pub use self::macros::*;
 #[cfg(feature = "alloc")]
 pub use self::renderable::*;
@@ -146,6 +146,10 @@ pub use self::renderable::*;
 /// contain an attribute value which will eventually be surrounded by double
 /// quotes. The value must escape `&` to `&amp;`, `<` to `&lt;`, `>` to `&gt;`,
 /// and `"` to `&quot;`.
+///
+/// For [`Raw<T, Attributes>`] (a.k.a. [`RawAttributes<T>`]), this must contain
+/// complete attributes as written inside an opening tag, each preceded by a
+/// space.
 ///
 /// This is useful for rendering raw HTML, but should be used with caution
 /// as it can lead to XSS vulnerabilities if used incorrectly. If you are
@@ -240,8 +244,13 @@ impl<T: AsRef<str>, C: Context> Debug for Raw<T, C> {
 
 /// A raw pre-escaped attribute value.
 ///
-/// This is a type alias for [`Raw<T, Attribute>`].
+/// This is a type alias for [`Raw<T, AttributeValue>`].
 pub type RawAttribute<T> = Raw<T, AttributeValue>;
+
+/// A raw pre-escaped list of attributes.
+///
+/// This is a type alias for [`Raw<T, Attributes>`].
+pub type RawAttributes<T> = Raw<T, Attributes>;
 
 /// A rendered HTML string.
 ///

@@ -187,6 +187,12 @@ impl ComponentAttribute {
 
 impl Parse for ComponentAttribute {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        if input.peek(Paren) {
+            return Err(input.error(
+                "attribute spreading is only supported on elements; pass the attributes to the component as a property instead",
+            ));
+        }
+
         Ok(Self {
             name: input.parse()?,
             value: {
